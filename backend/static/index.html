@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Live Tour AI – CMS</title>
+  <style>
+    :root {
+      --bg: #1a1b26;
+      --surface: #24283b;
+      --text: #c0caf5;
+      --muted: #565f89;
+      --accent: #7aa2f7;
+      --success: #9ece6a;
+      --warning: #e0af68;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 1.5rem; min-height: 100vh; }
+    h1 { font-size: 1.5rem; margin-top: 0; }
+    .toolbar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .lang-switch { margin-left: auto; }
+    .lang-switch button { background: var(--surface); color: var(--text); border: 1px solid var(--muted); padding: 0.35rem 0.75rem; cursor: pointer; border-radius: 6px; }
+    .lang-switch button.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+    .lang-switch button + button { margin-left: 0.25rem; }
+    section { background: var(--surface); border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+    section h2 { font-size: 1rem; margin: 0 0 0.75rem 0; color: var(--muted); }
+    .config-row { display: flex; gap: 2rem; flex-wrap: wrap; }
+    .config-group label { display: inline-flex; align-items: center; gap: 0.5rem; margin-right: 1rem; cursor: pointer; }
+    .config-group input[type="checkbox"] { width: 1rem; height: 1rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid var(--muted); }
+    th { color: var(--muted); font-weight: 600; }
+    input[type="text"], input[type="number"] { width: 100%; max-width: 140px; background: var(--bg); border: 1px solid var(--muted); color: var(--text); padding: 0.4rem; border-radius: 6px; }
+    .actions { display: flex; gap: 0.5rem; align-items: center; }
+    .btn { background: var(--accent); color: var(--bg); border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 500; }
+    .btn:hover { filter: brightness(1.1); }
+    .btn.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--muted); }
+    .btn.danger { background: #f7768e; color: var(--bg); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid var(--muted); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .status-done { color: var(--success); }
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
+    .modal { background: var(--surface); border-radius: 12px; max-width: 600px; width: 100%; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; }
+    .modal h3 { margin: 0; padding: 1rem; border-bottom: 1px solid var(--muted); }
+    .modal-content { padding: 1rem; overflow-y: auto; flex: 1; }
+    .modal-footer { padding: 1rem; border-top: 1px solid var(--muted); display: flex; gap: 0.5rem; justify-content: flex-end; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 1rem; }
+    .tabs button { background: var(--bg); color: var(--text); border: 1px solid var(--muted); padding: 0.4rem 0.75rem; border-radius: 6px; cursor: pointer; }
+    .tabs button.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .fact-list { list-style: none; padding: 0; margin: 0; }
+    .fact-list li { margin-bottom: 0.75rem; }
+    .fact-list .fact-edit { width: 100%; min-height: 60px; background: var(--bg); border: 1px solid var(--muted); color: var(--text); padding: 0.5rem; border-radius: 6px; resize: vertical; font-family: inherit; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <h1>Live Tour AI – CMS</h1>
+    <div class="lang-switch">
+      <button type="button" id="langHu" class="active" data-lang="hu">HU</button>
+      <button type="button" id="langEn" data-lang="en">EN</button>
+    </div>
+  </div>
+
+  <section>
+    <h2 data-i18n="config">Konfiguráció</h2>
+    <div class="config-row">
+      <div class="config-group">
+        <span data-i18n="personas">Perszónák:</span>
+        <label><input type="checkbox" name="persona" value="Gyerek" checked> Gyerek</label>
+        <label><input type="checkbox" name="persona" value="Szakértő" checked> Szakértő</label>
+        <label><input type="checkbox" name="persona" value="Komikus" checked> Komikus</label>
+      </div>
+      <div class="config-group">
+        <span data-i18n="languages">Nyelvek:</span>
+        <label><input type="checkbox" name="lang" value="HU" checked> HU</label>
+        <label><input type="checkbox" name="lang" value="EN" checked> EN</label>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 data-i18n="markers">Marker táblázat</h2>
+    <p>
+      <button type="button" class="btn" id="addMarker" data-i18n="addMarker">+ Add Marker</button>
+      <button type="button" class="btn secondary" id="generateAll" data-i18n="generate">Generate</button>
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th data-i18n="nameHu">Név (HU)</th>
+          <th data-i18n="nameEn">Név (EN)</th>
+          <th data-i18n="originName">Eredeti/Latin név</th>
+          <th>Lat</th>
+          <th>Lng</th>
+          <th data-i18n="actions">Státusz / Művelet</th>
+        </tr>
+      </thead>
+      <tbody id="markerBody"></tbody>
+    </table>
+  </section>
+
+  <div id="reviewModal" class="modal-backdrop hidden">
+    <div class="modal">
+      <h3 data-i18n="reviewTitle">Szerkesztés / Áttekintés</h3>
+      <div class="modal-content">
+        <div class="tabs" id="reviewTabs"></div>
+        <div id="reviewPanels"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn secondary" id="reviewCancel" data-i18n="cancel">Mégse</button>
+        <button type="button" class="btn" id="reviewSave" data-i18n="save">Mentés</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = '/api/v1';
+    const STORAGE_KEY = 'cms_markers';
+    const i18n = {
+      hu: {
+        config: 'Konfiguráció',
+        personas: 'Perszónák:',
+        languages: 'Nyelvek:',
+        markers: 'Marker táblázat',
+        addMarker: '+ Add Marker',
+        generate: 'Generate',
+        nameHu: 'Név (HU)',
+        nameEn: 'Név (EN)',
+        originName: 'Eredeti/Latin név',
+        actions: 'Státusz / Művelet',
+        reviewTitle: 'Szerkesztés / Áttekintés',
+        cancel: 'Mégse',
+        save: 'Mentés',
+        editReview: 'Szerkesztés',
+        generating: 'Generálás...',
+      },
+      en: {
+        config: 'Configuration',
+        personas: 'Personas:',
+        languages: 'Languages:',
+        markers: 'Marker table',
+        addMarker: '+ Add Marker',
+        generate: 'Generate',
+        nameHu: 'Name (HU)',
+        nameEn: 'Name (EN)',
+        originName: 'Origin/Latin name',
+        actions: 'Status / Action',
+        reviewTitle: 'Edit / Review',
+        cancel: 'Cancel',
+        save: 'Save',
+        editReview: 'Edit',
+        generating: 'Generating...',
+      },
+    };
+    let pageLang = 'hu';
+    let markers = [];
+    let currentJobId = null;
+    let reviewMarkerId = null;
+    let reviewContent = null;
+
+    function t(key) { return i18n[pageLang][key] ?? key; }
+    function applyI18n() {
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const v = t(el.getAttribute('data-i18n'));
+        if (v) el.textContent = v;
+      });
+      document.documentElement.lang = pageLang;
+    }
+
+    document.getElementById('langHu').addEventListener('click', () => { pageLang = 'hu'; document.getElementById('langHu').classList.add('active'); document.getElementById('langEn').classList.remove('active'); applyI18n(); });
+    document.getElementById('langEn').addEventListener('click', () => { pageLang = 'en'; document.getElementById('langEn').classList.add('active'); document.getElementById('langHu').classList.remove('active'); applyI18n(); });
+
+    function loadMarkersFromStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch (_) {}
+      return [];
+    }
+    function saveMarkersToStorage() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(markers));
+    }
+
+    function uid() { return Math.random().toString(36).slice(2, 11); }
+
+    function getSelectedPersonas() {
+      return Array.from(document.querySelectorAll('input[name="persona"]:checked')).map(c => c.value);
+    }
+    function getSelectedLanguages() {
+      return Array.from(document.querySelectorAll('input[name="lang"]:checked')).map(c => c.value);
+    }
+
+    function renderMarkers() {
+      const tbody = document.getElementById('markerBody');
+      tbody.innerHTML = markers.map((m, i) => `
+        <tr data-marker-id="${m.id}">
+          <td><input type="text" data-field="name_hu" value="${escapeAttr(m.name_hu)}" placeholder="Név HU" /></td>
+          <td><input type="text" data-field="name_en" value="${escapeAttr(m.name_en)}" placeholder="Név EN" /></td>
+          <td><input type="text" data-field="origin_name" value="${escapeAttr(m.origin_name)}" placeholder="Eredeti név" /></td>
+          <td><input type="number" step="any" data-field="lat" value="${m.lat}" /></td>
+          <td><input type="number" step="any" data-field="lng" value="${m.lng}" /></td>
+          <td class="actions">
+            <span class="row-status" id="status-${m.id}"></span>
+            <button type="button" class="btn secondary btn-edit-review hidden" data-marker-id="${m.id}" data-i18n="editReview">Szerkesztés</button>
+            <button type="button" class="btn danger btn-remove" data-index="${i}">×</button>
+          </td>
+        </tr>
+      `).join('');
+
+      tbody.querySelectorAll('input').forEach(inp => {
+        inp.addEventListener('change', () => {
+          const row = inp.closest('tr');
+          const id = row.getAttribute('data-marker-id');
+          const m = markers.find(mk => mk.id === id);
+          if (!m) return;
+          const field = inp.getAttribute('data-field');
+          let val = inp.value;
+          if (field === 'lat' || field === 'lng') val = parseFloat(val) || 0;
+          m[field] = val;
+          saveMarkersToStorage();
+        });
+      });
+
+      tbody.querySelectorAll('.btn-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+          markers.splice(parseInt(btn.getAttribute('data-index'), 10), 1);
+          saveMarkersToStorage();
+          renderMarkers();
+        });
+      });
+
+      tbody.querySelectorAll('.btn-edit-review').forEach(btn => {
+        btn.addEventListener('click', () => openReview(btn.getAttribute('data-marker-id')));
+      });
+    }
+    function escapeAttr(s) { return (s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    function setRowStatus(markerId, html) {
+      const el = document.getElementById(`status-${markerId}`);
+      const editBtn = document.querySelector(`.btn-edit-review[data-marker-id="${markerId}"]`);
+      if (!el) return;
+      el.innerHTML = html;
+      if (html.includes('spinner')) {
+        el.classList.remove('hidden');
+        if (editBtn) editBtn.classList.add('hidden');
+      } else if (html.includes('done') || html.includes('Szerkesztés')) {
+        el.classList.add('hidden');
+        if (editBtn) { editBtn.classList.remove('hidden'); editBtn.textContent = t('editReview'); }
+      }
+    }
+
+    async function startGenerate() {
+      const personas = getSelectedPersonas();
+      const languages = getSelectedLanguages();
+      if (!personas.length || !languages.length) { alert('Válassz perszónát és nyelvet.'); return; }
+      if (!markers.length) { alert('Legalább egy marker kell.'); return; }
+
+      markers.forEach(m => setRowStatus(m.id, '<span class="spinner"></span> ' + t('generating')));
+
+      const res = await fetch(`${API}/cms/markers`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(markers) });
+      if (!res.ok) { alert('Markerek mentése sikertelen.'); return; }
+
+      const batchRes = await fetch(`${API}/generator/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markers, personas, languages }),
+      });
+      if (!batchRes.ok) { alert('Batch indítása sikertelen.'); return; }
+      const { job_id } = await batchRes.json();
+      currentJobId = job_id;
+      pollJobStatus();
+    }
+
+    function pollJobStatus() {
+      if (!currentJobId) return;
+      fetch(`${API}/generator/status?job_id=${currentJobId}`)
+        .then(r => r.json())
+        .then(status => {
+          for (const [markerId, s] of Object.entries(status)) {
+            if (s === 'done') setRowStatus(markerId, '<span class="status-done">✓</span>');
+            else if (s === 'generating') setRowStatus(markerId, '<span class="spinner"></span> ' + t('generating'));
+          }
+          const allDone = Object.values(status).every(v => v === 'done');
+          if (!allDone) setTimeout(pollJobStatus, 1500);
+          else currentJobId = null;
+        })
+        .catch(() => setTimeout(pollJobStatus, 2000));
+    }
+
+    document.getElementById('generateAll').addEventListener('click', startGenerate);
+
+    function openReview(markerId) {
+      reviewMarkerId = markerId;
+      fetch(`${API}/cms/content/${markerId}`)
+        .then(r => r.json())
+        .then(content => {
+          reviewContent = JSON.parse(JSON.stringify(content));
+          const tabs = [];
+          const panels = [];
+          for (const [persona, langs] of Object.entries(content)) {
+            for (const [lang, facts] of Object.entries(langs)) {
+              const key = `${persona}-${lang}`;
+              tabs.push(`<button type="button" class="tab-btn ${tabs.length === 0 ? 'active' : ''}" data-key="${key}">${persona} – ${lang}</button>`);
+              panels.push(`
+                <div class="tab-panel ${panels.length === 0 ? 'active' : ''}" data-key="${key}">
+                  <ul class="fact-list">
+                    ${(facts || []).map((f, i) => `<li><textarea class="fact-edit" data-persona="${persona}" data-lang="${lang}" data-i="${i}" rows="2">${escapeAttr(f)}</textarea></li>`).join('')}
+                  </ul>
+                </div>
+              `);
+            }
+          }
+          document.getElementById('reviewTabs').innerHTML = tabs.join('');
+          document.getElementById('reviewPanels').innerHTML = panels.join('');
+
+          document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+              document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+              btn.classList.add('active');
+              document.querySelector(`.tab-panel[data-key="${btn.getAttribute('data-key')}"]`).classList.add('active');
+            });
+          });
+
+          document.getElementById('reviewPanels').querySelectorAll('.fact-edit').forEach(ta => {
+            ta.addEventListener('change', () => {
+              const persona = ta.getAttribute('data-persona');
+              const lang = ta.getAttribute('data-lang');
+              const i = parseInt(ta.getAttribute('data-i'), 10);
+              if (!reviewContent[persona]) reviewContent[persona] = {};
+              if (!reviewContent[persona][lang]) reviewContent[persona][lang] = [];
+              reviewContent[persona][lang][i] = ta.value;
+            });
+          });
+
+          document.getElementById('reviewModal').classList.remove('hidden');
+        })
+        .catch(() => alert('Tartalom betöltése sikertelen.'));
+    }
+
+    function closeReview() {
+      document.getElementById('reviewModal').classList.add('hidden');
+      reviewMarkerId = null;
+      reviewContent = null;
+    }
+
+    document.getElementById('reviewCancel').addEventListener('click', closeReview);
+    document.getElementById('reviewSave').addEventListener('click', () => {
+      if (!reviewMarkerId || !reviewContent) return;
+      fetch(`${API}/cms/content/${reviewMarkerId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reviewContent),
+      }).then(r => { if (r.ok) closeReview(); else alert('Mentés sikertelen.'); });
+    });
+
+    document.getElementById('addMarker').addEventListener('click', () => {
+      markers.push({ id: uid(), name_hu: '', name_en: '', origin_name: '', lat: 0, lng: 0 });
+      saveMarkersToStorage();
+      renderMarkers();
+    });
+
+    async function loadConfig() {
+      try {
+        const res = await fetch(`${API}/cms/config`);
+        if (res.ok) {
+          const cfg = await res.json();
+          document.querySelectorAll('input[name="persona"]').forEach(c => { c.checked = (cfg.personas || []).includes(c.value); });
+          document.querySelectorAll('input[name="lang"]').forEach(c => { c.checked = (cfg.languages || []).includes(c.value); });
+        }
+      } catch (_) {}
+    }
+    function saveConfig() {
+      const personas = getSelectedPersonas();
+      const languages = getSelectedLanguages();
+      fetch(`${API}/cms/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personas, languages }) }).catch(() => {});
+    }
+    document.querySelectorAll('input[name="persona"], input[name="lang"]').forEach(c => c.addEventListener('change', saveConfig));
+
+    async function loadMarkers() {
+      try {
+        const res = await fetch(`${API}/cms/markers`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length) markers = data;
+        }
+      } catch (_) {}
+      if (!markers.length) markers = loadMarkersFromStorage();
+      if (!markers.length) markers = [{ id: uid(), name_hu: '', name_en: '', origin_name: '', lat: 0, lng: 0 }];
+      saveMarkersToStorage();
+      renderMarkers();
+    }
+
+    document.getElementById('reviewModal').addEventListener('click', (e) => { if (e.target.id === 'reviewModal') closeReview(); });
+
+    (async () => {
+      await loadConfig();
+      await loadMarkers();
+      applyI18n();
+    })();
+  </script>
+</body>
+</html>
