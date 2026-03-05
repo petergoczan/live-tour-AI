@@ -32,6 +32,9 @@ def get_markers() -> list[dict]:
     if _markers_cache is None:
         with open(MARKERS_FILE, encoding="utf-8") as f:
             _markers_cache = json.load(f)
+    if _markers_cache is None:
+        # Fallback for static type checkers: guarantee a list return type.
+        return []
     return _markers_cache
 
 
@@ -53,6 +56,9 @@ def get_global_config() -> dict:
     if _config_cache is None:
         with open(CONFIG_FILE, encoding="utf-8") as f:
             _config_cache = json.load(f)
+    if _config_cache is None:
+        # Fallback for static type checkers: guarantee a dict return type.
+        return {"personas": ["Gyerek", "Szakértő", "Komikus"], "languages": ["HU", "EN"]}
     return _config_cache
 
 
@@ -74,6 +80,9 @@ def get_content_store() -> dict:
     if _content_store_cache is None:
         with open(CONTENT_FILE, encoding="utf-8") as f:
             _content_store_cache = json.load(f)
+    if _content_store_cache is None:
+        # Fallback for static type checkers: guarantee a dict return type.
+        return {}
     return _content_store_cache
 
 
