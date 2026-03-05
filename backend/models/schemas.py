@@ -12,12 +12,6 @@ class JobStatus(str, Enum):
     FAILED = "failed"
 
 
-class LocationBase(BaseModel):
-    lat: float
-    lon: float
-    user_id: str
-
-
 # --- CMS & Content ---
 
 class Marker(BaseModel):
@@ -39,7 +33,7 @@ def content_store_type():
 
 
 class GlobalConfig(BaseModel):
-    personas: list[str] = ["Gyerek", "Szakértő", "Komikus"]
+    personas: list[str] = ["Child", "Expert", "Comic"]
     languages: list[str] = ["HU", "EN"]
 
 
@@ -49,5 +43,5 @@ class CheckinRequest(BaseModel):
     lat: float
     lon: float
     marker_id: Optional[str] = None
-    persona: str = "Gyerek"
-    lang: str = "HU"
+    persona: str = "Child"
+    lang: str = "EN"
