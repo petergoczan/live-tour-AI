@@ -2,6 +2,8 @@
 Runtime checkin: next fact from ContentStore, optional AI wrapper sentence (background).
 """
 import asyncio
+from datetime import datetime, timedelta
+from enum import Enum
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks
@@ -15,6 +17,15 @@ OLLAMA_MODEL = "llama3"
 
 # user_id -> marker_id -> fact_index (for "next fact" per user per marker)
 _user_fact_index: dict[str, dict[str, int]] = {}
+
+# user_id -> marker_id -> last checkin timestamp
+_user_last_seen: dict[str, dict[str, datetime]] = {}
+
+
+class WrapperMode(str, Enum):
+    FIRST = "FIRST"
+    AGAIN = "AGAIN"
+    STILL = "STILL"
 
 
 def _get_next_fact(user_id: str, marker_id: str, persona: str, lang: str) -> tuple[Optional[str], str]:
@@ -35,6 +46,7 @@ def _get_next_fact(user_id: str, marker_id: str, persona: str, lang: str) -> tup
 
     idx = _user_fact_index[user_id][marker_id]
     if idx >= len(facts):
+        # Already past the last fact: do not loop back to the beginning.
         return None, ""
 
     fact = facts[idx]
@@ -52,25 +64,45 @@ def _display_name_for_wrapper(marker: dict, lang: str) -> str:
     return name_en or name_hu or origin or "creature"
 
 
-async def _generate_wrapper(name: str) -> str:
-    """Generate a short context sentence via Ollama, e.g. 'Look, here is a {name} again!'."""
+async def _generate_wrapper(name: str, mode: WrapperMode, lang: str) -> str:
+    """Generate a short context sentence via Ollama based on the wrapper mode and language."""
     try:
         client = AsyncClient()
-        prompt = f"Reply with exactly one short sentence: 'Look, here is a {name} again!' Output only this sentence, nothing else."
+        if lang.upper() == "HU":
+            if mode == WrapperMode.FIRST:
+                core_sentence = f"Nézd, itt egy {name}!"
+            elif mode == WrapperMode.AGAIN:
+                core_sentence = f"Nézd, itt van újra a {name}!"
+            else:
+                core_sentence = f"Látom, még mindig a {name} előtt vagy!"
+            language_label = "Hungarian"
+        else:
+            if mode == WrapperMode.FIRST:
+                core_sentence = f"Look, here is a {name}!"
+            elif mode == WrapperMode.AGAIN:
+                core_sentence = f"Look, here is the {name} again!"
+            else:
+                core_sentence = f"I see you are still in front of the {name}!"
+            language_label = "English"
+
+        prompt = (
+            f"Reply with exactly one short {language_label} sentence: "
+            f"'{core_sentence}' Output only this sentence, nothing else."
+        )
         response = await client.chat(
             model=OLLAMA_MODEL,
             messages=[{"role": "user", "content": prompt}],
         )
         content = (response.get("message") or {}).get("content") or ""
-        return content.strip() or f"Look, here is a {name} again!"
+        return content.strip() or core_sentence
     except Exception as e:
-        print(f"[checkin] Wrapper generation failed for name={name!r}: {e}")
-        return f"Look, here is a {name} again!"
+        print(f"[checkin] Wrapper generation failed for name={name!r}, mode={mode}, lang={lang}: {e}")
+        return core_sentence
 
 
-def _run_wrapper_background(name: str) -> None:
+def _run_wrapper_background(name: str, mode: WrapperMode, lang: str) -> None:
     """BackgroundTasks callback: generate wrapper sentence (and optionally cache for future use)."""
-    asyncio.run(_generate_wrapper(name))
+    asyncio.run(_generate_wrapper(name, mode, lang))
 
 
 @router.post("/")
@@ -91,11 +123,27 @@ def checkin(req: CheckinRequest, background_tasks: BackgroundTasks):
     fact = _get_next_fact(req.user_id, marker_id, persona, lang)[0]
     if fact is None:
         return {"fact": None, "wrapper": None, "error": "No facts"}
+
+    # Determine wrapper mode based on when the user last checked in for this marker.
+    now = datetime.now()
+    user_seen = _user_last_seen.get(req.user_id)
+    if user_seen is None or marker_id not in user_seen:
+        mode = WrapperMode.FIRST
+        if user_seen is None:
+            _user_last_seen[req.user_id] = {}
+    else:
+        last_seen = user_seen[marker_id]
+        if now - last_seen > timedelta(minutes=3):
+            mode = WrapperMode.AGAIN
+        else:
+            mode = WrapperMode.STILL
+    _user_last_seen[req.user_id][marker_id] = now
+
     markers = storage.get_markers()
     name = "creature"
     for m in markers:
         if m.get("id") == marker_id:
             name = _display_name_for_wrapper(m, lang)
             break
-    background_tasks.add_task(_run_wrapper_background, name)
+    background_tasks.add_task(_run_wrapper_background, name, mode, lang)
     return {"fact": fact, "wrapper": None}
