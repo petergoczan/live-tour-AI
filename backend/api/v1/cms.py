@@ -30,8 +30,8 @@ def get_markers():
     return storage.get_markers()
 
 
-@router.post("/markers")
-def save_markers(markers: list[dict]):
+@router.put("/markers")
+def put_markers(markers: list[dict]):
     storage.save_markers(markers)
     return storage.get_markers()
 
