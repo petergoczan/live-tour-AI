@@ -18,8 +18,11 @@ OLLAMA_MODEL = "llama3"
 # user_id -> marker_id -> fact_index (for "next fact" per user per marker)
 _user_fact_index: dict[str, dict[str, int]] = {}
 
-# user_id -> marker_id -> last checkin timestamp
+# user_id -> marker_id -> last checkin timestamp (used to know if user has ever visited a marker)
 _user_last_seen: dict[str, dict[str, datetime]] = {}
+
+# user_id -> last marker_id with a successful fact response
+_user_last_marker: dict[str, str] = {}
 
 
 class WrapperMode(str, Enum):
@@ -66,25 +69,25 @@ def _display_name_for_wrapper(marker: dict, lang: str) -> str:
 
 async def _generate_wrapper(name: str, mode: WrapperMode, lang: str) -> str:
     """Generate a short context sentence via Ollama based on the wrapper mode and language."""
+    if lang.upper() == "HU":
+        if mode == WrapperMode.FIRST:
+            core_sentence = f"Nézd, itt egy {name}!"
+        elif mode == WrapperMode.AGAIN:
+            core_sentence = f"Nézd, itt van újra a {name}!"
+        else:
+            core_sentence = f"Látom, még mindig a {name} előtt vagy!"
+        language_label = "Hungarian"
+    else:
+        if mode == WrapperMode.FIRST:
+            core_sentence = f"Look, here is a {name}!"
+        elif mode == WrapperMode.AGAIN:
+            core_sentence = f"Look, here is the {name} again!"
+        else:
+            core_sentence = f"I see you are still in front of the {name}!"
+        language_label = "English"
+
     try:
         client = AsyncClient()
-        if lang.upper() == "HU":
-            if mode == WrapperMode.FIRST:
-                core_sentence = f"Nézd, itt egy {name}!"
-            elif mode == WrapperMode.AGAIN:
-                core_sentence = f"Nézd, itt van újra a {name}!"
-            else:
-                core_sentence = f"Látom, még mindig a {name} előtt vagy!"
-            language_label = "Hungarian"
-        else:
-            if mode == WrapperMode.FIRST:
-                core_sentence = f"Look, here is a {name}!"
-            elif mode == WrapperMode.AGAIN:
-                core_sentence = f"Look, here is the {name} again!"
-            else:
-                core_sentence = f"I see you are still in front of the {name}!"
-            language_label = "English"
-
         prompt = (
             f"Reply with exactly one short {language_label} sentence: "
             f"'{core_sentence}' Output only this sentence, nothing else."
@@ -120,24 +123,43 @@ def checkin(req: CheckinRequest, background_tasks: BackgroundTasks):
     persona, lang = req.persona, req.lang
     if persona not in store[marker_id] or lang not in store[marker_id][persona]:
         return {"fact": None, "wrapper": None, "error": "No content for this persona/lang"}
+
+    # Determine wrapper mode before fetching the next fact:
+    # - FIRST: user has never checked in to this marker before.
+    # - AGAIN: user has been here before and between visits has successfully checked in to at least one other marker.
+    # - STILL: user has been here before and has not successfully checked in to any other marker in between.
+    #   STILL is only allowed if at least 2 minutes have passed since the last successful checkin for this marker;
+    #   otherwise we return an error and do not advance the fact index.
+    now = datetime.now()
+    user_seen = _user_last_seen.get(req.user_id)
+    if user_seen is None:
+        mode = WrapperMode.FIRST
+    elif marker_id not in user_seen:
+        mode = WrapperMode.FIRST
+    else:
+        last_marker = _user_last_marker.get(req.user_id)
+        if last_marker is not None and last_marker != marker_id:
+            mode = WrapperMode.AGAIN
+        else:
+            # Candidate STILL: enforce minimum time window for a new fact on the same marker.
+            last_seen = user_seen[marker_id]
+            if now - last_seen < timedelta(minutes=2):
+                return {
+                    "fact": None,
+                    "wrapper": None,
+                    "error": "Not enough time has passed for a new fact",
+                }
+            mode = WrapperMode.STILL
+
     fact = _get_next_fact(req.user_id, marker_id, persona, lang)[0]
     if fact is None:
         return {"fact": None, "wrapper": None, "error": "No facts"}
 
-    # Determine wrapper mode based on when the user last checked in for this marker.
-    now = datetime.now()
-    user_seen = _user_last_seen.get(req.user_id)
-    if user_seen is None or marker_id not in user_seen:
-        mode = WrapperMode.FIRST
-        if user_seen is None:
-            _user_last_seen[req.user_id] = {}
-    else:
-        last_seen = user_seen[marker_id]
-        if now - last_seen > timedelta(minutes=3):
-            mode = WrapperMode.AGAIN
-        else:
-            mode = WrapperMode.STILL
+    # Successful fact delivery: update last-seen markers for future mode decisions.
+    if user_seen is None:
+        _user_last_seen[req.user_id] = {}
     _user_last_seen[req.user_id][marker_id] = now
+    _user_last_marker[req.user_id] = marker_id
 
     markers = storage.get_markers()
     name = "creature"
