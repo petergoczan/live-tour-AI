@@ -1,4 +1,6 @@
 from enum import Enum
+from typing import Optional
+
 from pydantic import BaseModel
 
 
@@ -46,6 +48,6 @@ class CheckinRequest(BaseModel):
     user_id: str
     lat: float
     lon: float
-    marker_id: str | None = None
+    marker_id: Optional[str] = None
     persona: str = "Gyerek"
     lang: str = "HU"

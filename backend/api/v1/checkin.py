@@ -2,6 +2,8 @@
 Runtime checkin: next fact from ContentStore, optional AI wrapper sentence (background).
 """
 import asyncio
+from typing import Optional
+
 from fastapi import APIRouter, BackgroundTasks
 from ollama import AsyncClient
 
@@ -15,7 +17,7 @@ OLLAMA_MODEL = "llama3"
 _user_fact_index: dict[str, dict[str, int]] = {}
 
 
-def _get_next_fact(user_id: str, marker_id: str, persona: str, lang: str) -> tuple[str | None, str]:
+def _get_next_fact(user_id: str, marker_id: str, persona: str, lang: str) -> tuple[Optional[str], str]:
     """
     Return the next fact for (user_id, marker_id, persona, lang) from ContentStore and advance the index.
     Returns (fact_text, marker_name); marker_name is unused but kept for API compatibility.
@@ -30,19 +32,24 @@ def _get_next_fact(user_id: str, marker_id: str, persona: str, lang: str) -> tup
         _user_fact_index[user_id] = {}
     if marker_id not in _user_fact_index[user_id]:
         _user_fact_index[user_id][marker_id] = 0
-    idx = _user_fact_index[user_id][marker_id] % len(facts)
+
+    idx = _user_fact_index[user_id][marker_id]
+    if idx >= len(facts):
+        return None, ""
+
+    fact = facts[idx]
     _user_fact_index[user_id][marker_id] += 1
-    return facts[idx], ""
+    return fact, ""
 
 
-def _display_name_for_wrapper(marker: dict) -> str:
-    """Pick a display name for the wrapper sentence (e.g. 'Look, here is a {name} again!')."""
-    return (
-        (marker.get("name_hu") or "").strip()
-        or (marker.get("name_en") or "").strip()
-        or (marker.get("origin_name") or "").strip()
-        or "creature"
-    )
+def _display_name_for_wrapper(marker: dict, lang: str) -> str:
+    """Pick a display name for the wrapper sentence based on the requested language."""
+    name_hu = (marker.get("name_hu") or "").strip()
+    name_en = (marker.get("name_en") or "").strip()
+    origin = (marker.get("origin_name") or "").strip()
+    if lang.upper() == "HU":
+        return name_hu or name_en or origin or "creature"
+    return name_en or name_hu or origin or "creature"
 
 
 async def _generate_wrapper(name: str) -> str:
@@ -61,7 +68,7 @@ async def _generate_wrapper(name: str) -> str:
         return f"Look, here is a {name} again!"
 
 
-def _run_wrapper_background(user_id: str, marker_id: str, name: str) -> None:
+def _run_wrapper_background(name: str) -> None:
     """BackgroundTasks callback: generate wrapper sentence (and optionally cache for future use)."""
     asyncio.run(_generate_wrapper(name))
 
@@ -88,7 +95,7 @@ def checkin(req: CheckinRequest, background_tasks: BackgroundTasks):
     name = "creature"
     for m in markers:
         if m.get("id") == marker_id:
-            name = _display_name_for_wrapper(m)
+            name = _display_name_for_wrapper(m, lang)
             break
-    background_tasks.add_task(_run_wrapper_background, req.user_id, marker_id, name)
+    background_tasks.add_task(_run_wrapper_background, name)
     return {"fact": fact, "wrapper": None}
