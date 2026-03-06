@@ -52,13 +52,13 @@ def get_global_config() -> dict:
     global _config_cache
     _ensure_data_dir()
     if not CONFIG_FILE.exists():
-        return {"personas": ["Gyerek", "Szakértő", "Komikus"], "languages": ["HU", "EN"]}
+        return {"personas": ["Child", "Expert", "Comedian"], "languages": ["HU", "EN"]}
     if _config_cache is None:
         with open(CONFIG_FILE, encoding="utf-8") as f:
             _config_cache = json.load(f)
     if _config_cache is None:
         # Fallback for static type checkers: guarantee a dict return type.
-        return {"personas": ["Gyerek", "Szakértő", "Komikus"], "languages": ["HU", "EN"]}
+        return {"personas": ["Child", "Expert", "Comedian"], "languages": ["HU", "EN"]}
     return _config_cache
 
 
