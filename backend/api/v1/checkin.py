@@ -1,12 +1,11 @@
 """
-Runtime checkin: next fact from ContentStore, optional AI wrapper sentence (background).
+Runtime checkin: next fact from ContentStore and AI wrapper sentence.
 """
-import asyncio
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter
 from ollama import AsyncClient
 
 import storage
@@ -103,16 +102,11 @@ async def _generate_wrapper(name: str, mode: WrapperMode, lang: str) -> str:
         return core_sentence
 
 
-def _run_wrapper_background(name: str, mode: WrapperMode, lang: str) -> None:
-    """BackgroundTasks callback: generate wrapper sentence (and optionally cache for future use)."""
-    asyncio.run(_generate_wrapper(name, mode, lang))
-
-
 @router.post("/")
-def checkin(req: CheckinRequest, background_tasks: BackgroundTasks):
+async def checkin(req: CheckinRequest):
     """
-    Return the next stored fact for this user/marker/persona/lang from ContentStore (no Ollama for facts).
-    Starts a background task to generate a short wrapper sentence (e.g. 'Look, here is a {name} again!').
+    Return the next stored fact for this user/marker/persona/lang from ContentStore
+    and a short wrapper sentence generated via Ollama.
     """
     marker_id = req.marker_id
     if not marker_id:
@@ -132,9 +126,7 @@ def checkin(req: CheckinRequest, background_tasks: BackgroundTasks):
     #   otherwise we return an error and do not advance the fact index.
     now = datetime.now()
     user_seen = _user_last_seen.get(req.user_id)
-    if user_seen is None:
-        mode = WrapperMode.FIRST
-    elif marker_id not in user_seen:
+    if user_seen is None or marker_id not in user_seen:
         mode = WrapperMode.FIRST
     else:
         last_marker = _user_last_marker.get(req.user_id)
@@ -167,5 +159,6 @@ def checkin(req: CheckinRequest, background_tasks: BackgroundTasks):
         if m.get("id") == marker_id:
             name = _display_name_for_wrapper(m, lang)
             break
-    background_tasks.add_task(_run_wrapper_background, name, mode, lang)
-    return {"fact": fact, "wrapper": None}
+
+    wrapper = await _generate_wrapper(name, mode, lang)
+    return {"fact": fact, "wrapper": wrapper}
