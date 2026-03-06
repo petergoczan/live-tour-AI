@@ -9,7 +9,7 @@ from fastapi import APIRouter
 from ollama import AsyncClient
 
 import storage
-from models.schemas import CheckinRequest, CheckinResponse
+from models.schemas import CheckinRequest, CheckinResponse, Marker
 from utils import calculate_distance
 
 router = APIRouter(prefix="/checkin", tags=["checkin"])
@@ -60,15 +60,15 @@ def _get_next_fact(user_id: str, marker_id: str, persona: str, lang: str) -> tup
     return fact, ""
 
 
-def _display_name_for_wrapper(marker: dict, lang: str) -> Optional[str]:
+def _display_name_for_wrapper(marker: Marker, lang: str) -> Optional[str]:
     """Pick a display name for the wrapper sentence based on the requested language.
 
     Returns None when no suitable name is available; the wrapper generator will then
     use a generic language-specific fallback sentence (e.g. 'Itt van valami.').
     """
-    name_hu = (marker.get("name_hu") or "").strip()
-    name_en = (marker.get("name_en") or "").strip()
-    origin = (marker.get("origin_name") or "").strip()
+    name_hu = (marker.name_hu or "").strip()
+    name_en = (marker.name_en or "").strip()
+    origin = (marker.origin_name or "").strip()
     if lang.upper() == "HU":
         name = name_hu or name_en or origin
     else:
@@ -120,7 +120,7 @@ async def _generate_wrapper(name: Optional[str], mode: WrapperMode, lang: str) -
         return core_sentence
 
 
-async def do_checkin(req: CheckinRequest) -> CheckinResponse:
+async def _do_checkin(req: CheckinRequest) -> CheckinResponse:
     """Core checkin logic: get next fact and wrapper for a specific marker."""
     marker_id = req.marker_id
     if not marker_id:
@@ -169,10 +169,10 @@ async def do_checkin(req: CheckinRequest) -> CheckinResponse:
     _user_last_seen[req.user_id][marker_id] = now
     _user_last_marker[req.user_id] = marker_id
 
-    markers = storage.get_markers()
+    markers: list[Marker] = storage.get_markers()
     name: Optional[str] = None
     for m in markers:
-        if m.get("id") == marker_id:
+        if m.id == marker_id:
             name = _display_name_for_wrapper(m, lang)
             break
 
@@ -186,18 +186,18 @@ async def checkin(req: CheckinRequest) -> CheckinResponse:
     Receive coordinates from the mobile app and, if the user is within 15 meters of a marker,
     delegate to the main checkin flow for that marker.
     """
-    if req.lat is None or req.lon is None:
+    if req.lat is None or req.lng is None:
         return CheckinResponse(fact=None, wrapper=None, error="GPS coordinates required")
 
-    markers = storage.get_markers()
+    markers: list[Marker] = storage.get_markers()
     target_marker_id: str | None = None
     closest_distance: float | None = None
 
     # Find the closest marker within 15 meters of the user's location.
     for m in markers:
-        dist = calculate_distance(req.lat, req.lon, m["lat"], m["lng"])
+        dist = calculate_distance(req.lat, req.lng, m.lat, m.lng)
         if dist <= 15 and (closest_distance is None or dist < closest_distance):
-            target_marker_id = m["id"]
+            target_marker_id = m.id
             closest_distance = dist
 
     if not target_marker_id:
@@ -205,4 +205,4 @@ async def checkin(req: CheckinRequest) -> CheckinResponse:
 
     # If we found a nearby marker, reuse the existing core checkin logic.
     req.marker_id = target_marker_id
-    return await do_checkin(req)
+    return await _do_checkin(req)

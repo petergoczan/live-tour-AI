@@ -16,11 +16,11 @@ class JobStatus(str, Enum):
 
 class Marker(BaseModel):
     id: str
-    name_hu: str = ""
-    name_en: str = ""
-    origin_name: str = ""
-    lat: float = 0.0
-    lng: float = 0.0
+    lat: float
+    lng: float
+    name_hu: str | None = None
+    name_en: str | None = None
+    origin_name: str | None = None
 
 
 GeneratedFactList = list[str]  # exactly 5 strings
@@ -41,7 +41,7 @@ class GlobalConfig(BaseModel):
 class CheckinRequest(BaseModel):
     user_id: str
     lat: float
-    lon: float
+    lng: float
     marker_id: Optional[str] = None
     persona: str = "Child"
     lang: str = "EN"

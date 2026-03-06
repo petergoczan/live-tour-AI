@@ -5,6 +5,9 @@ Job status values are JobStatus enum values (pending, generating, done, failed).
 """
 from pathlib import Path
 import json
+from typing import Iterable
+
+from models.schemas import Marker
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 MARKERS_FILE = DATA_DIR / "markers.json"
@@ -14,7 +17,7 @@ CONTENT_FILE = DATA_DIR / "content_store.json"
 # In-memory cache and batch job status: job_id -> { marker_id: status_str }
 _batch_job_status: dict[str, dict[str, str]] = {}
 _content_store_cache: dict | None = None
-_markers_cache: list[dict] | None = None
+_markers_cache: list[Marker] | None = None
 _config_cache: dict | None = None
 
 
@@ -23,7 +26,7 @@ def _ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def get_markers() -> list[dict]:
+def get_markers() -> list[Marker]:
     """Load and return the list of markers from disk (cached)."""
     global _markers_cache
     _ensure_data_dir()
@@ -31,20 +34,28 @@ def get_markers() -> list[dict]:
         return []
     if _markers_cache is None:
         with open(MARKERS_FILE, encoding="utf-8") as f:
-            _markers_cache = json.load(f)
+            raw = json.load(f)
+        _markers_cache = [Marker(**m) for m in raw]
     if _markers_cache is None:
         # Fallback for static type checkers: guarantee a list return type.
         return []
     return _markers_cache
 
 
-def save_markers(markers: list[dict]) -> None:
+def save_markers(markers: Iterable[Marker | dict]) -> None:
     """Persist the marker list to disk and update cache."""
     global _markers_cache
     _ensure_data_dir()
+    # Normalize to plain dicts for on-disk representation.
+    serializable = [
+        m.model_dump() if isinstance(m, Marker) else m for m in markers
+    ]
     with open(MARKERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(markers, f, ensure_ascii=False, indent=2)
-    _markers_cache = markers
+        json.dump(serializable, f, ensure_ascii=False, indent=2)
+    # Keep cache as Marker instances.
+    _markers_cache = [
+        m if isinstance(m, Marker) else Marker(**m) for m in serializable
+    ]
 
 
 def get_global_config() -> dict:
