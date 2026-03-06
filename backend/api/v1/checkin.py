@@ -10,6 +10,7 @@ from ollama import AsyncClient
 
 import storage
 from models.schemas import CheckinRequest, CheckinResponse
+from utils import calculate_distance
 
 router = APIRouter(prefix="/checkin", tags=["checkin"])
 OLLAMA_MODEL = "llama3"
@@ -119,12 +120,8 @@ async def _generate_wrapper(name: Optional[str], mode: WrapperMode, lang: str) -
         return core_sentence
 
 
-@router.post("/", response_model=CheckinResponse)
-async def checkin(req: CheckinRequest) -> CheckinResponse:
-    """
-    Return the next stored fact for this user/marker/persona/lang from ContentStore
-    and a short wrapper sentence generated via Ollama.
-    """
+async def do_checkin(req: CheckinRequest) -> CheckinResponse:
+    """Core checkin logic: get next fact and wrapper for a specific marker."""
     marker_id = req.marker_id
     if not marker_id:
         return CheckinResponse(fact=None, wrapper=None, error="marker_id required")
@@ -181,3 +178,31 @@ async def checkin(req: CheckinRequest) -> CheckinResponse:
 
     wrapper = await _generate_wrapper(name, mode, lang)
     return CheckinResponse(fact=fact, wrapper=wrapper, error=None)
+
+
+@router.post("/nearby", response_model=CheckinResponse)
+async def checkin(req: CheckinRequest) -> CheckinResponse:
+    """
+    Receive coordinates from the mobile app and, if the user is within 15 meters of a marker,
+    delegate to the main checkin flow for that marker.
+    """
+    if req.lat is None or req.lon is None:
+        return CheckinResponse(fact=None, wrapper=None, error="GPS coordinates required")
+
+    markers = storage.get_markers()
+    target_marker_id: str | None = None
+    closest_distance: float | None = None
+
+    # Find the closest marker within 15 meters of the user's location.
+    for m in markers:
+        dist = calculate_distance(req.lat, req.lon, m["lat"], m["lng"])
+        if dist <= 15 and (closest_distance is None or dist < closest_distance):
+            target_marker_id = m["id"]
+            closest_distance = dist
+
+    if not target_marker_id:
+        return CheckinResponse(fact=None, wrapper=None, error="no_marker_nearby")
+
+    # If we found a nearby marker, reuse the existing core checkin logic.
+    req.marker_id = target_marker_id
+    return await do_checkin(req)
