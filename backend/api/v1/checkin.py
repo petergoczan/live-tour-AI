@@ -9,10 +9,13 @@ from fastapi import APIRouter
 from ollama import AsyncClient
 
 import storage
-from models.schemas import CheckinRequest
+from models.schemas import CheckinRequest, CheckinResponse
 
 router = APIRouter(prefix="/checkin", tags=["checkin"])
 OLLAMA_MODEL = "llama3"
+
+# Shared Ollama client for this module to avoid creating a new client per request.
+_ollama_client = AsyncClient()
 
 # user_id -> marker_id -> fact_index (for "next fact" per user per marker)
 _user_fact_index: dict[str, dict[str, int]] = {}
@@ -56,37 +59,51 @@ def _get_next_fact(user_id: str, marker_id: str, persona: str, lang: str) -> tup
     return fact, ""
 
 
-def _display_name_for_wrapper(marker: dict, lang: str) -> str:
-    """Pick a display name for the wrapper sentence based on the requested language."""
+def _display_name_for_wrapper(marker: dict, lang: str) -> Optional[str]:
+    """Pick a display name for the wrapper sentence based on the requested language.
+
+    Returns None when no suitable name is available; the wrapper generator will then
+    use a generic language-specific fallback sentence (e.g. 'Itt van valami.').
+    """
     name_hu = (marker.get("name_hu") or "").strip()
     name_en = (marker.get("name_en") or "").strip()
     origin = (marker.get("origin_name") or "").strip()
     if lang.upper() == "HU":
-        return name_hu or name_en or origin or "creature"
-    return name_en or name_hu or origin or "creature"
+        name = name_hu or name_en or origin
+    else:
+        name = name_en or origin
+    return name or None
 
 
-async def _generate_wrapper(name: str, mode: WrapperMode, lang: str) -> str:
+async def _generate_wrapper(name: Optional[str], mode: WrapperMode, lang: str) -> str:
     """Generate a short context sentence via Ollama based on the wrapper mode and language."""
     if lang.upper() == "HU":
-        if mode == WrapperMode.FIRST:
-            core_sentence = f"Nézd, itt egy {name}!"
-        elif mode == WrapperMode.AGAIN:
-            core_sentence = f"Nézd, itt van újra a {name}!"
+        if name:
+            if mode == WrapperMode.FIRST:
+                core_sentence = f"Nézd, itt egy {name}!"
+            elif mode == WrapperMode.AGAIN:
+                core_sentence = f"Nézd, itt van újra egy {name}!"
+            else:
+                core_sentence = f"Látom, még mindig egy {name} előtt vagy!"
         else:
-            core_sentence = f"Látom, még mindig a {name} előtt vagy!"
+            # No display name available: use a generic Hungarian fallback.
+            core_sentence = "Itt van valami."
         language_label = "Hungarian"
     else:
-        if mode == WrapperMode.FIRST:
-            core_sentence = f"Look, here is a {name}!"
-        elif mode == WrapperMode.AGAIN:
-            core_sentence = f"Look, here is the {name} again!"
+        if name:
+            if mode == WrapperMode.FIRST:
+                core_sentence = f"Look, here is a {name}!"
+            elif mode == WrapperMode.AGAIN:
+                core_sentence = f"Look, here is the {name} again!"
+            else:
+                core_sentence = f"I see you are still in front of the {name}!"
         else:
-            core_sentence = f"I see you are still in front of the {name}!"
+            # No display name available: use a generic English fallback.
+            core_sentence = "Here is something."
         language_label = "English"
 
     try:
-        client = AsyncClient()
+        client = _ollama_client
         prompt = (
             f"Reply with exactly one short {language_label} sentence: "
             f"'{core_sentence}' Output only this sentence, nothing else."
@@ -102,21 +119,21 @@ async def _generate_wrapper(name: str, mode: WrapperMode, lang: str) -> str:
         return core_sentence
 
 
-@router.post("/")
-async def checkin(req: CheckinRequest):
+@router.post("/", response_model=CheckinResponse)
+async def checkin(req: CheckinRequest) -> CheckinResponse:
     """
     Return the next stored fact for this user/marker/persona/lang from ContentStore
     and a short wrapper sentence generated via Ollama.
     """
     marker_id = req.marker_id
     if not marker_id:
-        return {"fact": None, "wrapper": None, "error": "marker_id required"}
+        return CheckinResponse(fact=None, wrapper=None, error="marker_id required")
     store = storage.get_content_store()
     if marker_id not in store:
-        return {"fact": None, "wrapper": None, "error": "No content for this marker"}
+        return CheckinResponse(fact=None, wrapper=None, error="No content for this marker")
     persona, lang = req.persona, req.lang
     if persona not in store[marker_id] or lang not in store[marker_id][persona]:
-        return {"fact": None, "wrapper": None, "error": "No content for this persona/lang"}
+        return CheckinResponse(fact=None, wrapper=None, error="No content for this persona/lang")
 
     # Determine wrapper mode before fetching the next fact:
     # - FIRST: user has never checked in to this marker before.
@@ -136,16 +153,18 @@ async def checkin(req: CheckinRequest):
             # Candidate STILL: enforce minimum time window for a new fact on the same marker.
             last_seen = user_seen[marker_id]
             if now - last_seen < timedelta(minutes=2):
-                return {
-                    "fact": None,
-                    "wrapper": None,
-                    "error": "Not enough time has passed for a new fact",
-                }
+                return CheckinResponse(
+                    fact=None,
+                    wrapper=None,
+                    error="Not enough time has passed for a new fact",
+                )
             mode = WrapperMode.STILL
 
     fact = _get_next_fact(req.user_id, marker_id, persona, lang)[0]
     if fact is None:
-        return {"fact": None, "wrapper": None, "error": "No facts"}
+        # No more facts available for this marker/persona/lang combination.
+        # Return success with fact=None so the client can stay silent.
+        return CheckinResponse(fact=None, wrapper=None, error=None)
 
     # Successful fact delivery: update last-seen markers for future mode decisions.
     if user_seen is None:
@@ -154,11 +173,11 @@ async def checkin(req: CheckinRequest):
     _user_last_marker[req.user_id] = marker_id
 
     markers = storage.get_markers()
-    name = "creature"
+    name: Optional[str] = None
     for m in markers:
         if m.get("id") == marker_id:
             name = _display_name_for_wrapper(m, lang)
             break
 
     wrapper = await _generate_wrapper(name, mode, lang)
-    return {"fact": fact, "wrapper": wrapper}
+    return CheckinResponse(fact=fact, wrapper=wrapper, error=None)

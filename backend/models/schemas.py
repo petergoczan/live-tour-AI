@@ -45,3 +45,9 @@ class CheckinRequest(BaseModel):
     marker_id: Optional[str] = None
     persona: str = "Child"
     lang: str = "EN"
+
+
+class CheckinResponse(BaseModel):
+    fact: str | None
+    wrapper: str | None
+    error: str | None = None
