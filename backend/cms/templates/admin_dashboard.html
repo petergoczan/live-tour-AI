@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}{% if lang == 'HU' %}Partnerek{% else %}Partners{% endif %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1>{% if lang == 'HU' %}Partnerek{% else %}Partners{% endif %}</h1>
+  <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addPartnerModal">
+    {% if lang == 'HU' %}Partner hozzáadása{% else %}Add Partner{% endif %}
+  </button>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    {% if not partners %}
+    <p class="text-muted mb-0">{% if lang == 'HU' %}Még nincs partner hozzáadva.{% else %}No partners added yet.{% endif %}</p>
+    {% else %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>{% if lang == 'HU' %}Név{% else %}Name{% endif %}</th>
+            <th class="text-end">{% if lang == 'HU' %}Műveletek{% else %}Actions{% endif %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in partners %}
+          <tr>
+            <td><code>{{ p.id }}</code></td>
+            <td>{{ p.name }}</td>
+            <td class="text-end">
+              <a href="/admin/partner/{{ p.id }}{% if lang %}?lang={{ lang }}{% endif %}" class="btn btn-sm btn-outline-primary">
+                {% if lang == 'HU' %}Partner részletei{% else %}Open Partner Details{% endif %}
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Add Partner Modal -->
+<div class="modal fade" id="addPartnerModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">{% if lang == 'HU' %}Partner hozzáadása{% else %}Add Partner{% endif %}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label for="partnerName" class="form-label">{% if lang == 'HU' %}Név{% else %}Name{% endif %} (3–15 {% if lang == 'HU' %}karakter{% else %}characters{% endif %})</label>
+          <input type="text" class="form-control" id="partnerName" maxlength="15" placeholder="{% if lang == 'HU' %}Partner neve{% else %}Partner name{% endif %}">
+          <div id="partnerNameError" class="invalid-feedback"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% if lang == 'HU' %}Mégse{% else %}Cancel{% endif %}</button>
+        <button type="button" class="btn btn-primary" id="savePartnerBtn">{% if lang == 'HU' %}Mentés{% else %}Save{% endif %}</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function() {
+  const lang = "{{ lang }}";
+  const errMin = lang === "HU" ? "A név legalább 3 karakter legyen." : "Name must be at least 3 characters.";
+  const errMax = lang === "HU" ? "A név legfeljebb 15 karakter lehet." : "Name must be at most 15 characters.";
+  const modal = document.getElementById("addPartnerModal");
+  const input = document.getElementById("partnerName");
+  const errorEl = document.getElementById("partnerNameError");
+  const saveBtn = document.getElementById("savePartnerBtn");
+
+  function validate() {
+    const name = (input.value || "").trim();
+    if (name.length < 3) { input.classList.add("is-invalid"); errorEl.textContent = errMin; return false; }
+    if (name.length > 15) { input.classList.add("is-invalid"); errorEl.textContent = errMax; return false; }
+    input.classList.remove("is-invalid"); errorEl.textContent = ""; return true;
+  }
+  input.addEventListener("input", validate);
+  input.addEventListener("blur", validate);
+
+  saveBtn.addEventListener("click", async function() {
+    if (!validate()) return;
+    const name = input.value.trim();
+    const res = await fetch("/admin/partners", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const msg = data.detail && data.detail[0] && data.detail[0].msg ? data.detail[0].msg : (data.detail || data.error || "Error");
+      errorEl.textContent = msg; input.classList.add("is-invalid"); return;
+    }
+    if (data.error) { errorEl.textContent = data.error; input.classList.add("is-invalid"); return; }
+    window.location.reload();
+  });
+  modal.addEventListener("hidden.bs.modal", function() { input.value = ""; input.classList.remove("is-invalid"); errorEl.textContent = ""; });
+})();
+</script>
+{% endblock %}
+

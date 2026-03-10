@@ -6,7 +6,7 @@ from api.v1.generator import (
     _display_name_for_lang,
     _origin_name,
 )
-from models.schemas import JobStatus
+from core.schemas import JobStatus
 
 
 class TestJobStatus:

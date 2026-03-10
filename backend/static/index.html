@@ -382,15 +382,13 @@
     document.querySelectorAll('input[name="persona"], input[name="lang"]').forEach(c => c.addEventListener('change', saveConfig));
 
     async function loadMarkers() {
-      try {
-        const res = await fetch(`${API}/cms/markers`);
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data) && data.length) markers = data;
-        }
-      } catch (_) {}
-      if (!markers.length) markers = loadMarkersFromStorage();
-      if (!markers.length) markers = [{ id: uid(), name_hu: '', name_en: '', origin_name: '', lat: 0, lng: 0 }];
+      // For now, markers are managed locally in the browser for batch generation.
+      // If the backend needs to provide initial markers, this function can be
+      // extended to call a per-partner markers endpoint.
+      markers = loadMarkersFromStorage();
+      if (!markers.length) {
+        markers = [{ id: uid(), name_hu: '', name_en: '', origin_name: '', lat: 0, lng: 0 }];
+      }
       saveMarkersToStorage();
       renderMarkers();
     }

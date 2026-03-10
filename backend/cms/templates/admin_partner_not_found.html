@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}{% if lang == 'HU' %}Partner nem található{% else %}Partner not found{% endif %}{% endblock %}
+{% block content %}
+<div class="alert alert-warning">
+  {% if lang == 'HU' %}A kért partner nem található.{% else %}Partner not found.{% endif %} (ID: {{ partner_id }})
+</div>
+<a href="/admin{% if lang %}?lang={{ lang }}{% endif %}" class="btn btn-primary">{% if lang == 'HU' %}Vissza a listához{% else %}Back to list{% endif %}</a>
+{% endblock %}
+

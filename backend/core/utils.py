@@ -3,6 +3,7 @@ import math
 
 def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate the distance between two points in meters (Haversine formula)."""
+
     R = 6371000  # Earth's radius in meters
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)

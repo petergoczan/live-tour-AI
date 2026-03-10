@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}{{ partner.name }}{% endblock %}
+{% block content %}
+<nav class="mb-3"><a href="/admin{% if lang %}?lang={{ lang }}{% endif %}">{% if lang == 'HU' %}Partnerek{% else %}Partners{% endif %}</a> &rarr; <strong>{{ partner.name }}</strong></nav>
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1>{{ partner.name }}</h1>
+  <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#markerModal" data-marker-id="">
+    {% if lang == 'HU' %}Marker hozzáadása{% else %}Add Marker{% endif %}
+  </button>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    {% if not markers %}
+    <p class="text-muted mb-0">{% if lang == 'HU' %}Még nincs marker hozzáadva.{% else %}No markers added yet.{% endif %}</p>
+    {% else %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>{% if lang == 'HU' %}Név (EN){% else %}Name (EN){% endif %}</th>
+            <th>{% if lang == 'HU' %}Név (HU){% else %}Name (HU){% endif %}</th>
+            <th>{% if lang == 'HU' %}Eredeti név{% else %}Original name{% endif %}</th>
+            <th>Lat</th>
+            <th>Lng</th>
+            <th class="text-end">{% if lang == 'HU' %}Műveletek{% else %}Actions{% endif %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in markers %}
+          <tr>
+            <td><code>{{ m.id }}</code></td>
+            <td>{{ m.name_en or "—" }}</td>
+            <td>{{ m.name_hu or "—" }}</td>
+            <td>{{ m.origin_name or "—" }}</td>
+            <td>{{ m.lat }}</td>
+            <td>{{ m.lng }}</td>
+            <td class="text-end">
+              <button type="button" class="btn btn-sm btn-outline-secondary edit-marker" data-marker="{{ m | tojson }}">
+                {% if lang == 'HU' %}Szerkesztés{% else %}Edit{% endif %}
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Add/Edit Marker Modal -->
+<div class="modal fade" id="markerModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="markerModalTitle">{% if lang == 'HU' %}Marker hozzáadása{% else %}Add Marker{% endif %}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="markerId">
+        <div class="mb-3">
+          <label for="markerNameEn" class="form-label">{% if lang == 'HU' %}Név (EN){% else %}Name (EN){% endif %}</label>
+          <input type="text" class="form-control" id="markerNameEn" placeholder="Name in English">
+        </div>
+        <div class="mb-3">
+          <label for="markerNameHu" class="form-label">{% if lang == 'HU' %}Név (HU){% else %}Name (HU){% endif %}</label>
+          <input type="text" class="form-control" id="markerNameHu" placeholder="Name in Hungarian">
+        </div>
+        <div class="mb-3">
+          <label for="markerOriginName" class="form-label">{% if lang == 'HU' %}Eredeti / latin név{% else %}Original name (optional){% endif %}</label>
+          <input type="text" class="form-control" id="markerOriginName" placeholder="">
+        </div>
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label for="markerLat" class="form-label">Latitude</label>
+            <input type="number" step="any" class="form-control" id="markerLat" placeholder="e.g. 47.5">
+          </div>
+          <div class="col-md-6 mb-3">
+            <label for="markerLng" class="form-label">Longitude</label>
+            <input type="number" step="any" class="form-control" id="markerLng" placeholder="e.g. 19.0">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% if lang == 'HU' %}Mégse{% else %}Cancel{% endif %}</button>
+        <button type="button" class="btn btn-primary" id="saveMarkerBtn">{% if lang == 'HU' %}Mentés{% else %}Save{% endif %}</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function() {
+  const partnerId = "{{ partner.id }}";
+  const lang = "{{ lang }}";
+  const modal = document.getElementById("markerModal");
+  const titleEl = document.getElementById("markerModalTitle");
+  const addBtn = document.querySelector('[data-bs-target="#markerModal"]');
+  const editBtns = document.querySelectorAll(".edit-marker");
+
+  function openForNew() {
+    document.getElementById("markerId").value = "";
+    document.getElementById("markerNameEn").value = "";
+    document.getElementById("markerNameHu").value = "";
+    document.getElementById("markerOriginName").value = "";
+    document.getElementById("markerLat").value = "";
+    document.getElementById("markerLng").value = "";
+    titleEl.textContent = lang === "HU" ? "Marker hozzáadása" : "Add Marker";
+    new bootstrap.Modal(modal).show();
+  }
+  addBtn.addEventListener("click", openForNew);
+
+  editBtns.forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      const m = JSON.parse(btn.dataset.marker);
+      document.getElementById("markerId").value = m.id;
+      document.getElementById("markerNameEn").value = m.name_en || "";
+      document.getElementById("markerNameHu").value = m.name_hu || "";
+      document.getElementById("markerOriginName").value = m.origin_name || "";
+      document.getElementById("markerLat").value = m.lat ?? "";
+      document.getElementById("markerLng").value = m.lng ?? "";
+      titleEl.textContent = lang === "HU" ? "Marker szerkesztése" : "Edit Marker";
+      new bootstrap.Modal(modal).show();
+    });
+  });
+
+  document.getElementById("saveMarkerBtn").addEventListener("click", async function() {
+    const id = document.getElementById("markerId").value.trim();
+    const name_en = document.getElementById("markerNameEn").value.trim() || null;
+    const name_hu = document.getElementById("markerNameHu").value.trim() || null;
+    const origin_name = document.getElementById("markerOriginName").value.trim() || null;
+    const lat = parseFloat(document.getElementById("markerLat").value);
+    const lng = parseFloat(document.getElementById("markerLng").value);
+    if (isNaN(lat) || isNaN(lng)) { alert(lang === "HU" ? "Lat és Lng megadása kötelező." : "Lat and Lng are required."); return; }
+    const payload = { name_en, name_hu, origin_name, lat, lng };
+    const url = id
+      ? "/admin/partner/" + partnerId + "/markers/" + encodeURIComponent(id)
+      : "/admin/partner/" + partnerId + "/markers";
+    const method = id ? "PUT" : "POST";
+    const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const data = await res.json();
+    if (!res.ok || data.error) { alert(data.error || "Error"); return; }
+    window.location.reload();
+  });
+})();
+</script>
+{% endblock %}
+

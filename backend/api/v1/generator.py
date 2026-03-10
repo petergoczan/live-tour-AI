@@ -11,10 +11,10 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from ollama import AsyncClient
 from pydantic import BaseModel
 
-import storage
-from models.schemas import GeneratedFactList, JobStatus
+from core import storage
+from core.schemas import GeneratedFactList, JobStatus
 
-router = APIRouter(prefix="/generator", tags=["generator"])
+router = APIRouter()
 OLLAMA_MODEL = "llama3"
 MAX_RETRIES = 3
 

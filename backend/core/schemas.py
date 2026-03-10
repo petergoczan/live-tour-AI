@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 class JobStatus(str, Enum):
     """Status of a marker within a batch generation job."""
+
     PENDING = "pending"
     GENERATING = "generating"
     DONE = "done"
@@ -13,6 +14,12 @@ class JobStatus(str, Enum):
 
 
 # --- CMS & Content ---
+
+
+class Partner(BaseModel):
+    id: str
+    name: str
+
 
 class Marker(BaseModel):
     id: str
@@ -26,9 +33,12 @@ class Marker(BaseModel):
 GeneratedFactList = list[str]  # exactly 5 strings
 
 
-# ContentStore: marker_id -> persona -> lang -> GeneratedFactList
-# Type alias for the nested structure (Pydantic can validate dicts)
 def content_store_type():
+    """Return type alias for the nested content store structure.
+
+    ContentStore: marker_id -> persona -> lang -> GeneratedFactList
+    """
+
     return dict[str, dict[str, dict[str, GeneratedFactList]]]
 
 
@@ -37,9 +47,15 @@ class GlobalConfig(BaseModel):
     languages: list[str] = ["HU", "EN"]
 
 
-# Checkin request: may include persona/lang for content selection
 class CheckinRequest(BaseModel):
+    """Checkin request from the mobile app.
+
+    - partner_id is required to scope nearby lookup
+    - persona/lang select which content bucket to use
+    """
+
     user_id: str
+    partner_id: str
     lat: float
     lng: float
     marker_id: Optional[str] = None
@@ -51,3 +67,4 @@ class CheckinResponse(BaseModel):
     fact: str | None
     wrapper: str | None
     error: str | None = None
+

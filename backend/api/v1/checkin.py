@@ -8,11 +8,11 @@ from typing import Optional
 from fastapi import APIRouter
 from ollama import AsyncClient
 
-import storage
-from models.schemas import CheckinRequest, CheckinResponse, Marker
-from utils import calculate_distance
+from core import storage
+from core.schemas import CheckinRequest, CheckinResponse, Marker
+from core.utils import calculate_distance
 
-router = APIRouter(prefix="/checkin", tags=["checkin"])
+router = APIRouter()
 OLLAMA_MODEL = "llama3"
 
 # Shared Ollama client for this module to avoid creating a new client per request.
@@ -125,6 +125,9 @@ async def _do_checkin(req: CheckinRequest) -> CheckinResponse:
     marker_id = req.marker_id
     if not marker_id:
         return CheckinResponse(fact=None, wrapper=None, error="marker_id required")
+    partner_markers = storage.get_markers_by_partner(req.partner_id)
+    if not any(m.id == marker_id for m in partner_markers):
+        return CheckinResponse(fact=None, wrapper=None, error="Marker not found for this partner")
     store = storage.get_content_store()
     if marker_id not in store:
         return CheckinResponse(fact=None, wrapper=None, error="No content for this marker")
@@ -169,7 +172,7 @@ async def _do_checkin(req: CheckinRequest) -> CheckinResponse:
     _user_last_seen[req.user_id][marker_id] = now
     _user_last_marker[req.user_id] = marker_id
 
-    markers: list[Marker] = storage.get_markers()
+    markers = storage.get_markers_by_partner(req.partner_id)
     name: Optional[str] = None
     for m in markers:
         if m.id == marker_id:
@@ -188,8 +191,10 @@ async def checkin(req: CheckinRequest) -> CheckinResponse:
     """
     if req.lat is None or req.lng is None:
         return CheckinResponse(fact=None, wrapper=None, error="GPS coordinates required")
+    if not req.partner_id:
+        return CheckinResponse(fact=None, wrapper=None, error="partner_id required")
 
-    markers: list[Marker] = storage.get_markers()
+    markers = storage.get_markers_by_partner(req.partner_id)
     target_marker_id: str | None = None
     closest_distance: float | None = None
 
