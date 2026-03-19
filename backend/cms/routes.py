@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
+from markupsafe import Markup
 
 from core import storage
 from core.schemas import Marker, Partner
@@ -28,7 +29,8 @@ def _tojson(value):
 
     if hasattr(value, "model_dump"):
         value = value.model_dump()
-    return json.dumps(value)
+    # Mark as safe so the JSON isn't HTML-escaped inside <script> blocks.
+    return Markup(json.dumps(value))
 
 
 templates.env.filters["tojson"] = _tojson
@@ -44,6 +46,11 @@ class MarkerBody(BaseModel):
     origin_name: Optional[str] = None
     lat: float
     lng: float
+
+
+class GlobalConfigBody(BaseModel):
+    personas: list[str]
+    languages: list[str]
 
 
 @router.get("", response_class=HTMLResponse)
@@ -78,12 +85,14 @@ async def partner_detail(request: Request, partner_id: str, lang: str = "EN"):
             {"request": request, "partner_id": partner_id, "lang": lang.upper()},
         )
     markers = storage.get_markers_by_partner(partner_id)
+    config = storage.get_global_config()
     return templates.TemplateResponse(
         "admin_partner_detail.html",
         {
             "request": request,
             "partner": partner,
             "markers": markers,
+            "config": config,
             "lang": lang.upper(),
         },
     )
@@ -177,4 +186,36 @@ async def delete_marker(partner_id: str, marker_id: str):
     new_list = [m for m in markers if m.id != marker_id]
     storage.save_markers_for_partner(partner_id, new_list)
     return {"status": "deleted", "marker_id": marker_id}
+
+
+# --- Content store (facts) ---
+
+
+@router.get("/config")
+def get_config():
+    return storage.get_global_config()
+
+
+@router.put("/config")
+def put_config(body: GlobalConfigBody):
+    storage.save_global_config({"personas": body.personas, "languages": body.languages})
+    return storage.get_global_config()
+
+
+@router.get("/content/{marker_id}")
+def get_marker_content(marker_id: str):
+    """Return content store slice for one marker: { persona: { lang: [str, ...] } }."""
+    store = storage.get_content_store()
+    if marker_id not in store:
+        raise HTTPException(status_code=404, detail="Marker not found or no content")
+    return store[marker_id]
+
+
+@router.put("/content/{marker_id}")
+def save_marker_content(marker_id: str, content: dict):
+    """Save content for one marker (overwrites existing slice)."""
+    store = storage.get_content_store()
+    store[marker_id] = content
+    storage.save_content_store(store)
+    return store[marker_id]
 

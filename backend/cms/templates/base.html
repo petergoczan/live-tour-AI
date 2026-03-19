@@ -5,8 +5,162 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Admin{% endblock %} – Live Tour AI</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #1a1b26;
+      --surface: #24283b;
+      --text: #c0caf5;
+      --muted: #565f89;
+      --accent: #7aa2f7;
+      --success: #9ece6a;
+      --warning: #e0af68;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 0 1.5rem;
+      min-height: 100vh;
+    }
+    .navbar-dark.bg-dark {
+      background: var(--surface) !important;
+    }
+    main.container.py-4 {
+      padding-top: 1.5rem !important;
+    }
+    .card {
+      background: var(--surface);
+      border: none;
+      border-radius: 10px;
+      color: var(--text);
+    }
+    .card-body {
+      padding: 1rem;
+    }
+    .table {
+      color: var(--text);
+    }
+    .table thead th {
+      color: var(--muted);
+      border-bottom-color: var(--muted) !important;
+    }
+    .table td {
+      border-bottom-color: var(--muted) !important;
+    }
+    .form-control {
+      width: 100%;
+      max-width: 140px;
+      background: var(--bg);
+      border: 1px solid var(--muted);
+      color: var(--text);
+      padding: 0.4rem;
+      border-radius: 6px;
+    }
+    label.form-label {
+      color: var(--muted);
+    }
+    .btn {
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .btn:hover { filter: brightness(1.1); }
+    .btn.secondary,
+    .btn.btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--muted);
+    }
+    .btn-outline-secondary,
+    .btn.btn-outline-secondary {
+      background: transparent;
+      color: var(--text);
+      border-color: var(--muted);
+    }
+    .btn.danger {
+      background: #f7768e;
+      color: var(--bg);
+    }
+    .spinner {
+      display: inline-block;
+      width: 1rem;
+      height: 1rem;
+      border: 2px solid var(--muted);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .status-done { color: var(--success); }
+    section {
+      background: var(--surface);
+      border-radius: 10px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    section h2 {
+      font-size: 1rem;
+      margin: 0 0 0.75rem 0;
+      color: var(--muted);
+    }
+    .config-row { display: flex; gap: 2rem; flex-wrap: wrap; }
+    .config-group label { display: inline-flex; align-items: center; gap: 0.5rem; margin-right: 1rem; cursor: pointer; }
+    .config-group input[type="checkbox"] { width: 1rem; height: 1rem; }
+    .hidden { display: none !important; }
+    #reviewModal.modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 1rem;
+    }
+    #reviewModal .modal {
+      background: var(--surface);
+      border-radius: 12px;
+      max-width: 600px;
+      width: 100%;
+      max-height: 90vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    #reviewModal .modal h3 {
+      margin: 0;
+      padding: 1rem;
+      border-bottom: 1px solid var(--muted);
+    }
+    #reviewModal .modal-content { padding: 1rem; overflow-y: auto; flex: 1; }
+    #reviewModal .modal-footer { padding: 1rem; border-top: 1px solid var(--muted); display: flex; gap: 0.5rem; justify-content: flex-end; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 1rem; }
+    .tabs button { background: var(--bg); color: var(--text); border: 1px solid var(--muted); padding: 0.4rem 0.75rem; border-radius: 6px; cursor: pointer; }
+    .tabs button.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .fact-list { list-style: none; padding: 0; margin: 0; }
+    .fact-list li { margin-bottom: 0.75rem; }
+    .fact-edit {
+      width: 100%;
+      min-height: 60px;
+      background: var(--bg);
+      border: 1px solid var(--muted);
+      color: var(--text);
+      padding: 0.5rem;
+      border-radius: 6px;
+      resize: vertical;
+      font-family: inherit;
+    }
+  </style>
 </head>
-<body class="bg-light">
+<body>
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container-fluid">
       <a class="navbar-brand" href="/admin">Live Tour Admin</a>

@@ -9,6 +9,29 @@
   </button>
 </div>
 
+<section>
+  <h2>{% if lang == 'HU' %}Konfiguráció{% else %}Configuration{% endif %}</h2>
+  <div class="config-row">
+    <div class="config-group">
+      <span>{% if lang == 'HU' %}Perszónák:{% else %}Personas:{% endif %}</span>
+      {% for p in config.personas %}
+      <label><input type="checkbox" name="persona" value="{{ p }}" checked> {{ p }}</label>
+      {% endfor %}
+    </div>
+    <div class="config-group">
+      <span>{% if lang == 'HU' %}Nyelvek:{% else %}Languages:{% endif %}</span>
+      {% for l in config.languages %}
+      <label><input type="checkbox" name="lang" value="{{ l }}" checked> {{ l }}</label>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="mt-3" style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+    <button type="button" class="btn secondary" id="generateAll">
+      {% if lang == 'HU' %}Generálás{% else %}Generate{% endif %}
+    </button>
+  </div>
+</section>
+
 <div class="card">
   <div class="card-body">
     {% if not markers %}
@@ -37,8 +60,12 @@
             <td>{{ m.lat }}</td>
             <td>{{ m.lng }}</td>
             <td class="text-end">
-              <button type="button" class="btn btn-sm btn-outline-secondary edit-marker" data-marker="{{ m | tojson }}">
-                {% if lang == 'HU' %}Szerkesztés{% else %}Edit{% endif %}
+              <span class="row-status hidden" id="status-{{ m.id }}"></span>
+              <button type="button" class="btn btn-sm btn-outline-secondary edit-marker" data-marker='{{ m | tojson }}'>
+                {% if lang == 'HU' %}Marker szerkesztése{% else %}Edit Marker{% endif %}
+              </button>
+              <button type="button" class="btn secondary btn-sm btn-edit-review hidden" data-marker-id="{{ m.id }}">
+                {% if lang == 'HU' %}Szerkesztés{% else %}Edit Facts{% endif %}
               </button>
             </td>
           </tr>
@@ -90,6 +117,22 @@
     </div>
   </div>
 </div>
+
+<!-- Fact review modal -->
+<div id="reviewModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3>{% if lang == 'HU' %}Szerkesztés / Áttekintés{% else %}Edit / Review{% endif %}</h3>
+    <div class="modal-content">
+      <div class="tabs" id="reviewTabs"></div>
+      <div id="reviewPanels"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn secondary" id="reviewCancel">{% if lang == 'HU' %}Mégse{% else %}Cancel{% endif %}</button>
+      <button type="button" class="btn" id="reviewSave">{% if lang == 'HU' %}Mentés{% else %}Save{% endif %}</button>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 {% block scripts %}
 <script>
@@ -100,6 +143,22 @@
   const titleEl = document.getElementById("markerModalTitle");
   const addBtn = document.querySelector('[data-bs-target="#markerModal"]');
   const editBtns = document.querySelectorAll(".edit-marker");
+  const jobKey = `gen_job_${partnerId}`;
+
+  function isFactGenerationRunning() {
+    return !!localStorage.getItem(jobKey);
+  }
+
+  function setEditButtonsLocked(locked) {
+    editBtns.forEach(btn => {
+      btn.style.opacity = locked ? "0.6" : "";
+      btn.style.cursor = locked ? "not-allowed" : "";
+      btn.setAttribute("aria-disabled", locked ? "true" : "false");
+    });
+  }
+
+  let generationLocked = isFactGenerationRunning();
+  setEditButtonsLocked(generationLocked);
 
   function openForNew() {
     document.getElementById("markerId").value = "";
@@ -115,6 +174,10 @@
 
   editBtns.forEach(function(btn) {
     btn.addEventListener("click", function() {
+      if (generationLocked || isFactGenerationRunning()) {
+        alert("the marker cannot be edited during fact generation");
+        return;
+      }
       const m = JSON.parse(btn.dataset.marker);
       document.getElementById("markerId").value = m.id;
       document.getElementById("markerNameEn").value = m.name_en || "";
@@ -144,6 +207,237 @@
     const data = await res.json();
     if (!res.ok || data.error) { alert(data.error || "Error"); return; }
     window.location.reload();
+  });
+
+  // --- Fact generation UI (AI integration) ---
+  const markersPayload = [
+    {% for m in markers %}
+      {{ m | tojson }}{% if not loop.last %},{% endif %}
+    {% endfor %}
+  ];
+
+  let currentJobId = null;
+  let reviewMarkerId = null;
+  let reviewContent = null;
+
+  const pageLang = lang === "HU" ? "hu" : "en";
+  const i18n = {
+    hu: {
+      generating: "Generálás...",
+      editReview: "Szerkesztés",
+      cancel: "Mégse",
+      save: "Mentés",
+      reviewTitle: "Szerkesztés / Áttekintés",
+    },
+    en: {
+      generating: "Generating...",
+      editReview: "Edit Facts",
+      cancel: "Cancel",
+      save: "Save",
+      reviewTitle: "Edit / Review",
+    },
+  };
+
+  function t(key) {
+    return i18n[pageLang][key] ?? key;
+  }
+
+  function escapeAttr(s) {
+    return (s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function getSelectedPersonas() {
+    return Array.from(document.querySelectorAll('input[name="persona"]:checked')).map(c => c.value);
+  }
+
+  function getSelectedLanguages() {
+    return Array.from(document.querySelectorAll('input[name="lang"]:checked')).map(c => c.value);
+  }
+
+  async function saveConfig() {
+    const personas = getSelectedPersonas();
+    const languages = getSelectedLanguages();
+    await fetch("/admin/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ personas, languages }),
+    }).catch(() => {});
+  }
+
+  document.querySelectorAll('input[name="persona"], input[name="lang"]').forEach(c => {
+    c.addEventListener("change", saveConfig);
+  });
+
+  function setRowStatus(markerId, html) {
+    const el = document.getElementById(`status-${markerId}`);
+    const editBtn = document.querySelector(`.btn-edit-review[data-marker-id="${markerId}"]`);
+    if (!el) return;
+    el.innerHTML = html;
+    // Show status whenever we render something.
+    el.classList.toggle("hidden", !html);
+
+    if (editBtn) {
+      if (html && html.includes("spinner")) {
+        editBtn.classList.add("hidden");
+      } else if (html) {
+        editBtn.classList.remove("hidden");
+        editBtn.textContent = t("editReview");
+      }
+    }
+  }
+
+  async function startGenerate() {
+    const personas = getSelectedPersonas();
+    const languages = getSelectedLanguages();
+    if (!personas.length || !languages.length) {
+      alert(lang === "HU" ? "Válassz perszónát és nyelvet." : "Select personas and languages.");
+      return;
+    }
+    if (!markersPayload.length) {
+      alert(lang === "HU" ? "Legalább egy marker kell." : "At least one marker is required.");
+      return;
+    }
+
+    generationLocked = true;
+    setEditButtonsLocked(true);
+
+    markersPayload.forEach(m => setRowStatus(m.id, '<span class="spinner"></span> ' + t("generating")));
+
+    const batchRes = await fetch("/api/v1/generator/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ markers: markersPayload, personas, languages }),
+    });
+    if (!batchRes.ok) {
+      let msg = lang === "HU" ? "Batch indítása sikertelen." : "Batch start failed.";
+      try {
+        const data = await batchRes.json();
+        msg = data.detail || data.error || msg;
+      } catch (_) {}
+      alert(msg);
+      generationLocked = false;
+      setEditButtonsLocked(false);
+      return;
+    }
+    const batchJson = await batchRes.json();
+    currentJobId = batchJson.job_id;
+    localStorage.setItem(jobKey, currentJobId);
+    pollJobStatus();
+  }
+
+  function pollJobStatus() {
+    if (!currentJobId) return;
+    fetch(`/api/v1/generator/status?job_id=${encodeURIComponent(currentJobId)}`)
+      .then(r => r.json())
+      .then(status => {
+        for (const [markerId, s] of Object.entries(status)) {
+          if (s === "done") setRowStatus(markerId, '<span class="status-done">✓</span>');
+          else if (s === "generating") setRowStatus(markerId, '<span class="spinner"></span> ' + t("generating"));
+        }
+        const allDone = Object.values(status).every(v => v === "done");
+        if (!allDone) {
+          setTimeout(pollJobStatus, 1500);
+        } else {
+          currentJobId = null;
+          localStorage.removeItem(jobKey);
+          generationLocked = false;
+          setEditButtonsLocked(false);
+        }
+      })
+      .catch(() => setTimeout(pollJobStatus, 2000));
+  }
+
+  document.getElementById("generateAll").addEventListener("click", startGenerate);
+
+  // If the user switches language mid-generation, the page reloads.
+  // Resume polling using the stored job_id so the statuses don't "disappear".
+  const storedJobId = localStorage.getItem(jobKey);
+  if (storedJobId) {
+    currentJobId = storedJobId;
+    pollJobStatus();
+  }
+
+  function closeReview() {
+    document.getElementById("reviewModal").classList.add("hidden");
+    reviewMarkerId = null;
+    reviewContent = null;
+  }
+
+  document.getElementById("reviewCancel").addEventListener("click", closeReview);
+  document.getElementById("reviewModal").addEventListener("click", (e) => {
+    if (e.target && e.target.id === "reviewModal") closeReview();
+  });
+
+  async function openReview(markerId) {
+    reviewMarkerId = markerId;
+    try {
+      const r = await fetch(`/admin/content/${markerId}`);
+      if (!r.ok) throw new Error("Content not found");
+      const content = await r.json();
+      reviewContent = JSON.parse(JSON.stringify(content || {}));
+
+      const tabs = [];
+      const panels = [];
+      for (const [persona, langs] of Object.entries(reviewContent)) {
+        for (const [lang, facts] of Object.entries(langs)) {
+          const key = `${persona}-${lang}`;
+          tabs.push(`<button type="button" class="tab-btn ${tabs.length === 0 ? "active" : ""}" data-key="${key}">${persona} – ${lang}</button>`);
+          panels.push(`
+            <div class="tab-panel ${panels.length === 0 ? "active" : ""}" data-key="${key}">
+              <ul class="fact-list">
+                ${(facts || []).map((f, i) => `<li><textarea class="fact-edit" data-persona="${persona}" data-lang="${lang}" data-i="${i}" rows="2">${escapeAttr(f)}</textarea></li>`).join("")}
+              </ul>
+            </div>
+          `);
+        }
+      }
+
+      document.getElementById("reviewTabs").innerHTML = tabs.join("");
+      document.getElementById("reviewPanels").innerHTML = panels.join("");
+
+      document.querySelectorAll(".tab-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+          document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+          btn.classList.add("active");
+          document.querySelector(`.tab-panel[data-key="${btn.getAttribute("data-key")}"]`).classList.add("active");
+        });
+      });
+
+      document.getElementById("reviewPanels").querySelectorAll(".fact-edit").forEach(ta => {
+        ta.addEventListener("change", () => {
+          const persona = ta.getAttribute("data-persona");
+          const lang = ta.getAttribute("data-lang");
+          const i = parseInt(ta.getAttribute("data-i"), 10);
+          if (!reviewContent[persona]) reviewContent[persona] = {};
+          if (!reviewContent[persona][lang]) reviewContent[persona][lang] = [];
+          reviewContent[persona][lang][i] = ta.value;
+        });
+      });
+
+      document.getElementById("reviewModal").classList.remove("hidden");
+    } catch (_) {
+      alert(lang === "HU" ? "Tartalom betöltése sikertelen." : "Failed to load content.");
+    }
+  }
+
+  document.querySelectorAll(".btn-edit-review").forEach(btn => {
+    btn.addEventListener("click", () => openReview(btn.getAttribute("data-marker-id")));
+  });
+
+  document.getElementById("reviewSave").addEventListener("click", async () => {
+    if (!reviewMarkerId || !reviewContent) return;
+    const r = await fetch(`/admin/content/${reviewMarkerId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(reviewContent),
+    });
+    if (r.ok) closeReview();
+    else alert(lang === "HU" ? "Mentés sikertelen." : "Save failed.");
   });
 })();
 </script>
